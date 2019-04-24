@@ -67,11 +67,20 @@ func getRemotePubKey(chain []*x509.Certificate) (ic.PubKey, error) {
 	if _, err := chain[0].Verify(x509.VerifyOptions{Roots: pool}); err != nil {
 		return nil, err
 	}
+
 	remotePubKey, err := x509.MarshalPKIXPublicKey(chain[1].PublicKey)
 	if err != nil {
 		return nil, err
 	}
-	return ic.UnmarshalRsaPublicKey(remotePubKey)
+
+	switch chain[1].PublicKeyAlgorithm.String() {
+	case "RSA":
+		return ic.UnmarshalRsaPublicKey(remotePubKey)
+	case "ECDSA":
+		return ic.UnmarshalECDSAPublicKey(remotePubKey)
+	}
+
+	return nil, errors.New("Failed to unmarshal a valid key")
 }
 
 func keyToCertificate(sk ic.PrivKey) (interface{}, *x509.Certificate, error) {
@@ -104,7 +113,13 @@ func keyToCertificate(sk ic.PrivKey) (interface{}, *x509.Certificate, error) {
 		}
 		publicKey = &k.PublicKey
 		privateKey = k
-	// TODO: add support for ECDSA
+	case pb.KeyType_ECDSA:
+		k, err := x509.ParseECPrivateKey(pbmes.GetData())
+		if err != nil {
+			return nil, nil, err
+		}
+		publicKey = &k.PublicKey
+		privateKey = k
 	default:
 		return nil, nil, errors.New("unsupported key type for TLS")
 	}
